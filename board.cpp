@@ -1,4 +1,3 @@
-// board.cpp
 #include "board.h"
 
 Board::Board(int numShips) : numShips(numShips) {

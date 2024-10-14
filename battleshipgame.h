@@ -1,12 +1,11 @@
-// battleshipgame.h
 #ifndef BATTLESHIPGAME_H
 #define BATTLESHIPGAME_H
 
 #include <QMainWindow>
 #include <QGridLayout>
 #include <QPushButton>
-#include <QVector>
 #include <QLabel>
+#include <QComboBox>
 #include <QRadioButton>
 #include <QButtonGroup>
 #include <QIcon>
@@ -15,10 +14,9 @@
 class BattleshipGame : public QMainWindow {
     Q_OBJECT
 public:
-    explicit BattleshipGame(QWidget *parent = nullptr);
+    BattleshipGame(QWidget *parent = nullptr);
 
 private:
-    // Game Logic
     int numShips;
     Board userBoard;
     Board botBoard;
@@ -28,43 +26,51 @@ private:
     QString message;
     QString difficulty;
 
-    // UI Components
     QWidget *centralWidget;
     QGridLayout *userGridLayout;
     QGridLayout *botGridLayout;
     QLabel *messageLabel;
+    QComboBox *difficultyComboBox;
     QRadioButton *horizontalRadio;
     QRadioButton *verticalRadio;
     QButtonGroup *orientationGroup;
     QPushButton *restartButton;
     QPushButton *exitButton;
 
-    // Icons
     QIcon shipIcon;
     QIcon hitIcon;
     QIcon missIcon;
     QIcon oceanIcon;
-
-    // Bot AI Variables
-    QVector<QPair<int, int>> botTargets;
-    QVector<QPair<int, int>> possibleMoves;
     bool huntingMode;
+    QVector<QPair<int, int>> possibleMoves;
+    QVector<QPair<int, int>> lastHits;
 
-    // Methods
+    void botSmartAttack();
+    void addAdjacentPositions(int row, int col);
+    bool isPositionInPossibleMoves(int row, int col);
+
+    QVector<QPair<int, int>> botTargets;
+    QVector<QPair<int, int>> directions{{0, 1}, {1, 0}, {0, -1}, {-1, 0}};
+    int currentDirection;
+
     void createIcons();
     void setupUI();
     void setupBoard(QGridLayout *gridLayout, bool isBotBoard);
-    void botPlaceShips();
-    void userPlaceShip(int row, int col);
+    void userPlaceShip(int row, int col, QPushButton *button);
     void userAttack(int row, int col, QPushButton *button);
     void botAttack();
-    void botSmartAttack();
-    bool isPositionInPossibleMoves(int row, int col);
-    void addAdjacentPositions(int row, int col);
-    void updateUserBoard();
+    void botEasyAttack();
+
+    void botHardAttack();
+    QPushButton *findButtonAt(int row, int col, QGridLayout *layout);
+    void resetGame();
+    void botPlaceShips();
+    bool isValidCell(int row, int col);
 
 private slots:
-    void resetGame();
+    void onDifficultyChanged(const QString &difficulty);
+    void onRestartClicked();
+    void onExitClicked();
 };
 
 #endif // BATTLESHIPGAME_H
