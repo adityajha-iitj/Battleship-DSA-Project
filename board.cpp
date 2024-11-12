@@ -1,7 +1,12 @@
-#include "board.h"
+#include "Board.h"
 
 Board::Board(int numShips) : numShips(numShips) {
     grid = QVector<QVector<char>>(GRID_SIZE, QVector<char>(GRID_SIZE, '~'));
+}
+
+void Board::resetBoard() {
+    grid = QVector<QVector<char>>(GRID_SIZE, QVector<char>(GRID_SIZE, '~'));
+    ships.clear();
 }
 
 bool Board::isValidPosition(int row, int col, bool isVertical, int shipLength) {
@@ -52,4 +57,13 @@ bool Board::hasShipsRemaining() {
         }
     }
     return false;
+}
+
+// New methods for accessing the grid
+char Board::getCell(int row, int col) const {
+    return grid[row][col];
+}
+
+void Board::setCell(int row, int col, char value) {
+    grid[row][col] = value;
 }

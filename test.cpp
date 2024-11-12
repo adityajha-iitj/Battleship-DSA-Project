@@ -1,13 +1,176 @@
 #include <QApplication>
-#include "Battleshipgame.h"
-#include <QPainter>
-#include <QPen>
-#include <QDialog>
-#include <QSpinBox>
-#include <QGroupBox>
+#include <QMainWindow>
+#include <QGridLayout>
+#include <QPushButton>
+#include <QVector>
 #include <QMessageBox>
+#include <QComboBox>
+#include <QLabel>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QGroupBox>
+#include <QRadioButton>
+#include <QButtonGroup>
+#include <QPixmap>
+#include <QPainter>
+#include <QIcon>
+#include <QDialog>
+#include <QLineEdit>
+#include <QStackedWidget>
+#include <QSpinBox>
+#include <cstdlib>
+#include <ctime>
 
+const int GRID_SIZE = 7;
+const int MIN_SHIP_SIZE = 3;
+const int MAX_SHIP_SIZE = 5;
 
+struct Ship {
+    int row, col;
+    bool isVertical;
+    int size;
+    QVector<QPair<int, int>> positions;
+};
+
+class Board {
+public:
+    QVector<QVector<char>> grid;
+    QVector<Ship> ships;
+    int numShips;
+
+    Board(int numShips = 3) : numShips(numShips) {
+        grid = QVector<QVector<char>>(GRID_SIZE, QVector<char>(GRID_SIZE, '~'));
+    }
+
+    void resetBoard() {
+        grid = QVector<QVector<char>>(GRID_SIZE, QVector<char>(GRID_SIZE, '~'));
+        ships.clear();
+    }
+
+    bool isValidPosition(int row, int col, bool isVertical, int shipLength) {
+        if (isVertical) {
+            if (row + shipLength > GRID_SIZE) return false;
+            for (int i = 0; i < shipLength; i++) {
+                if (grid[row + i][col] != '~') return false;
+            }
+        } else {
+            if (col + shipLength > GRID_SIZE) return false;
+            for (int i = 0; i < shipLength; i++) {
+                if (grid[row][col + i] != '~') return false;
+            }
+        }
+        return true;
+    }
+
+    void placeShip(int row, int col, bool isVertical, int shipLength, char symbol = 'S') {
+        Ship ship = {row, col, isVertical, shipLength};
+        if (isVertical) {
+            for (int i = 0; i < shipLength; i++) {
+                grid[row + i][col] = symbol;
+                ship.positions.append(qMakePair(row + i, col));
+            }
+        } else {
+            for (int i = 0; i < shipLength; i++) {
+                grid[row][col + i] = symbol;
+                ship.positions.append(qMakePair(row, col + i));
+            }
+        }
+        ships.append(ship);
+    }
+
+    bool attack(int row, int col) {
+        if (grid[row][col] == 'S') {
+            grid[row][col] = 'X';
+            return true;
+        } else if (grid[row][col] == '~') {
+            grid[row][col] = 'O';
+        }
+        return false;
+    }
+
+    bool hasShipsRemaining() {
+        for (const auto& row : grid) {
+            for (const auto& cell : row) {
+                if (cell == 'S') return true;
+            }
+        }
+        return false;
+    }
+};
+
+class BattleshipGame : public QMainWindow {
+    Q_OBJECT
+public:
+    BattleshipGame(QWidget *parent = nullptr);
+
+private:
+    enum GameMode { SinglePlayer, Multiplayer };
+    GameMode currentMode;
+
+    // Single-player variables
+    int numShips;
+    Board userBoard;
+    Board botBoard;
+    int currentShip;
+    bool isPlacingShips;
+    bool gameOver;
+    QString message;
+    QString difficulty;
+    QVector<QPair<int, int>> botTargets;
+    QPair<int, int> lastHit;
+    QComboBox *shipLengthComboBox;
+
+    // Multiplayer variables
+    enum GamePhase { PlacingShips, Attacking };
+    GamePhase gamePhase;
+    Board player1Board;
+    Board player2Board;
+    int currentShipPlayer1;
+    int currentShipPlayer2;
+    int currentPlayer; // 1 or 2
+
+    QWidget *centralWidget;
+    QGridLayout *userGridLayout; // Used for single-player and multiplayer
+    QGridLayout *botGridLayout;  // Used for single-player
+    QGridLayout *player1GridLayout; // Used for multiplayer
+    QGridLayout *player2GridLayout; // Used for multiplayer
+    QLabel *messageLabel;
+    QComboBox *difficultyComboBox;
+    QRadioButton *horizontalRadio;
+    QRadioButton *verticalRadio;
+    QButtonGroup *orientationGroup;
+    QPushButton *restartButton;
+    QPushButton *exitButton;
+
+    QIcon shipIcon;
+    QIcon hitIcon;
+    QIcon missIcon;
+    QIcon oceanIcon;
+
+    void createIcons();
+    void setupUI();
+    void setupBoard(QGridLayout *gridLayout, bool isBotBoard = false);
+    void userPlaceShip(int row, int col, QPushButton *button);
+    void userAttack(int row, int col, QPushButton *button);
+    void botAttack();
+    void botEasyAttack();
+    void botMediumAttack();
+    void botHardAttack(int lastHitRow, int lastHitCol);
+    QPushButton *findButtonAt(int row, int col, QGridLayout *layout);
+    void resetGame();
+    void botPlaceShips();
+    void showStartupDialog();
+
+    // Multiplayer functions
+    void multiplayerPlaceShip(int row, int col, QPushButton *button);
+    void multiplayerAttack(int row, int col, QPushButton *button);
+    void switchTurns();
+
+private slots:
+    void onDifficultyChanged(const QString &difficulty);
+    void onRestartClicked();
+    void onExitClicked();
+};
 
 BattleshipGame::BattleshipGame(QWidget *parent)
     : QMainWindow(parent),
@@ -29,9 +192,6 @@ BattleshipGame::BattleshipGame(QWidget *parent)
     botBoard = Board(numShips);
     player1Board = Board(numShips);
     player2Board = Board(numShips);
-    int size = 5; // For example, a vector of size 5
-QVector<QPair<int, int>> probabilityVector(size, QPair<int, int>(0, 0)); // All pairs initialized to (0, 0)
-
 
     setupUI();
     if (currentMode == SinglePlayer) {
@@ -60,27 +220,6 @@ void BattleshipGame::createIcons() {
     QPixmap missPixmap(50, 50);
     missPixmap.fill(Qt::gray);
     missIcon = QIcon(missPixmap);
-
-
-    QPixmap leftPixmap(":/icons/left.png");
-    QPixmap middlePixmap(":/icons/middle.png");
-    QPixmap rightPixmap(":/icons/right.png");
-
-
-    leftShipIcon = QIcon(leftPixmap);
-    middleShipIcon = QIcon(middlePixmap);
-    rightShipIcon = QIcon(rightPixmap);
-
-
-    QTransform transform;
-    transform.rotate(90);
-    QPixmap upperPixmap = leftPixmap.transformed(transform);
-    QPixmap middleVerticalPixmap = middlePixmap.transformed(transform);
-    QPixmap lowerPixmap = rightPixmap.transformed(transform);
-
-    upperShipIcon = QIcon(upperPixmap);
-    middleVerticalShipIcon = QIcon(middleVerticalPixmap);
-    lowerShipIcon = QIcon(lowerPixmap);
 }
 
 void BattleshipGame::showStartupDialog() {
@@ -110,7 +249,7 @@ void BattleshipGame::showStartupDialog() {
     // Difficulty selection for single-player mode
     QLabel *difficultyLabel = new QLabel("Select Difficulty (Single Player):");
     QComboBox *difficultyComboBox = new QComboBox;
-    difficultyComboBox->addItems({"Easy", "Medium", "Hard","Expert"});
+    difficultyComboBox->addItems({"Easy", "Medium", "Hard"});
     dialogLayout->addWidget(difficultyLabel);
     dialogLayout->addWidget(difficultyComboBox);
 
@@ -333,28 +472,7 @@ void BattleshipGame::userPlaceShip(int row, int col, QPushButton *button) {
                 QPushButton *shipButton = isVertical ?
                                               findButtonAt(row + i, col, userGridLayout) :
                                               findButtonAt(row, col + i, userGridLayout);
-
-
-                if(isVertical){
-                    if(i == 0){
-                        shipButton -> setIcon(upperShipIcon);
-                    }else if(i == shipLength - 1){
-                        shipButton -> setIcon(lowerShipIcon);
-                    }else {
-                        shipButton->setIcon(middleVerticalShipIcon);
-                    }
-                }else{
-
-                if(i == 0){
-                    shipButton -> setIcon(leftShipIcon);
-                }else if(i == shipLength - 1){
-                    shipButton -> setIcon(rightShipIcon);
-                }else {
-                    shipButton->setIcon(middleShipIcon);
-                }}
-                shipButton->setIconSize(shipButton->size());
-
-
+                shipButton->setIcon(shipIcon);
             }
             currentShip++;
             if (currentShip == numShips) {
@@ -368,7 +486,7 @@ void BattleshipGame::userPlaceShip(int row, int col, QPushButton *button) {
 }
 
 void BattleshipGame::userAttack(int row, int col, QPushButton *button) {
-    if (botBoard.getCell(row, col) == 'X' || botBoard.getCell(row, col) == 'O') {
+    if (botBoard.grid[row][col] == 'X' || botBoard.grid[row][col] == 'O') {
         QMessageBox::warning(this, "Invalid Move", "You have already attacked this position.");
         return;
     }
@@ -396,9 +514,7 @@ void BattleshipGame::botAttack() {
         } else if (difficulty == "Medium") {
             botMediumAttack();
         } else if (difficulty == "Hard") {
-            botHardAttack();
-        } else if (difficulty == "Expert") {
-            botAttackExpertMode();
+            botHardAttack(lastHit.first, lastHit.second);
         }
         if (!userBoard.hasShipsRemaining()) {
             gameOver = true;
@@ -412,7 +528,7 @@ void BattleshipGame::botEasyAttack() {
     do {
         row = rand() % GRID_SIZE;
         col = rand() % GRID_SIZE;
-    } while (userBoard.getCell(row, col) == 'X' || userBoard.getCell(row, col) == 'O');
+    } while (userBoard.grid[row][col] == 'X' || userBoard.grid[row][col] == 'O');
 
     QPushButton *button = findButtonAt(row, col, userGridLayout);
     if (userBoard.attack(row, col)) {
@@ -440,145 +556,39 @@ void BattleshipGame::botMediumAttack() {
     }
 }
 
-void BattleshipGame::botSmartAttack() {
-    if (gameOver) return;
+void BattleshipGame::botHardAttack(int lastHitRow, int lastHitCol) {
+    QVector<QPair<int, int>> directions = {
+        qMakePair(-1, 0), qMakePair(1, 0), qMakePair(0, -1), qMakePair(0, 1)
+};
 
-    int botRow = -1, botCol = -1;
-    bool hit = false;
-
-    // Select target position
-    if (huntingMode && !possibleMoves.isEmpty()) {
-        // Continue hunting in the vicinity of the last hit
-        QPair<int, int> target = possibleMoves.takeFirst();
-        botRow = target.first;
-        botCol = target.second;
-    } else {
-        // Search for a new target
-        huntingMode = false; // Ensure hunting mode is off when starting a new search
-        possibleMoves.clear(); // Clear any leftover moves
-        do {
-            botRow = rand() % GRID_SIZE;
-            botCol = rand() % GRID_SIZE;
-        } while (userBoard.getCell(botRow,botCol) == 'X' || userBoard.getCell(botRow,botCol) == 'O');
+for (const auto& dir : directions) {
+    int newRow = lastHitRow + dir.first;
+    int newCol = lastHitCol + dir.second;
+    if (newRow >= 0 && newRow < GRID_SIZE && newCol >= 0 && newCol < GRID_SIZE) {
+        if (userBoard.grid[newRow][newCol] != 'X' && userBoard.grid[newRow][newCol] != 'O') {
+            botTargets.append(qMakePair(newRow, newCol));
+        }
     }
+}
 
-    hit = userBoard.attack(botRow, botCol);
-    QPushButton* button = findButtonAt(botRow, botCol, userGridLayout);
+if (!botTargets.isEmpty()) {
+    int index = rand() % botTargets.size();
+    QPair<int, int> target = botTargets[index];
 
-    if (hit) {
+    QPushButton *button = findButtonAt(target.first, target.second, userGridLayout);
+    if (userBoard.attack(target.first, target.second)) {
         button->setIcon(hitIcon);
-        messageLabel->setText(QString("Bot hits at %1%2!").arg(QChar('A' + botCol)).arg(botRow + 1));
-        addAdjacentPositions(botRow, botCol);
-        huntingMode = true;
+        lastHit = target;
+        botTargets.removeAt(index);
     } else {
         button->setIcon(missIcon);
-        messageLabel->setText(QString("Bot misses at %1%2.").arg(QChar('A' + botCol)).arg(botRow + 1));
+        botTargets.removeAt(index);
     }
-
-    if (!userBoard.hasShipsRemaining()) {
-        gameOver = true;
-        messageLabel->setText("Bot wins! Game over.");
-    }
+} else {
+    botEasyAttack();
+}
 }
 
-bool BattleshipGame::isPositionInPossibleMoves(int row, int col) {
-    for (const auto& pos : possibleMoves) {
-        if (pos.first == row && pos.second == col) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void BattleshipGame::addAdjacentPositions(int row, int col) {
-    QVector<QPair<int, int>> adjDirections = {
-        qMakePair(-1, 0), // Up
-        qMakePair(1, 0),  // Down
-        qMakePair(0, -1), // Left
-        qMakePair(0, 1)   // Right
-    };
-
-    for (const auto& dir : adjDirections) {
-        int newRow = row + dir.first;
-        int newCol = col + dir.second;
-        if (isValidCell(newRow, newCol)) {
-            // Check if the position has not been attacked and is not already in possibleMoves
-            if (userBoard.getCell(newRow,newCol) != 'X' && userBoard.getCell(newRow,newCol) != 'O' &&
-                !isPositionInPossibleMoves(newRow, newCol)) {
-                possibleMoves.append(qMakePair(newRow, newCol));
-            }
-        }
-    }
-}
-bool BattleshipGame::isValidCell(int row, int col) {
-    return row >= 0 && row < GRID_SIZE && col >= 0 && col < GRID_SIZE;
-}
-
-void BattleshipGame::botHardAttack() {
-    if (gameOver) return;
-
-    if (!lastHits.isEmpty()) {
-        // Continue attacking in the current direction
-        QPair<int, int> lastHit = lastHits.last();
-        int newRow = lastHit.first + directions[currentDirection].first;
-        int newCol = lastHit.second + directions[currentDirection].second;
-
-        if (isValidCell(newRow, newCol)) {
-            if (userBoard.getCell(newRow,newCol) != 'X' && userBoard.getCell(newRow,newCol) != 'O') {
-                QPushButton *button = findButtonAt(newRow, newCol, userGridLayout);
-                if (userBoard.attack(newRow, newCol)) {
-                    button->setIcon(hitIcon);
-                    lastHits.append({newRow, newCol});
-                    messageLabel->setText("Bot hit your ship!");
-                    if (!userBoard.hasShipsRemaining()) {
-                        gameOver = true;
-                        messageLabel->setText("Bot wins! Game over.");
-                    }
-                } else {
-                    button->setIcon(missIcon);
-                    messageLabel->setText("Bot missed!");
-                    // Change direction after a miss
-                    currentDirection = (currentDirection + 1) % 4;
-                }
-                return;
-            }
-        }
-
-        // If the current direction is invalid, try the next direction
-        currentDirection = (currentDirection + 1) % 4;
-        if (currentDirection == 0) {
-            // If we've tried all directions, start from the first hit in a new direction
-            lastHits.pop_back();
-            if (!lastHits.isEmpty()) {
-                botHardAttack();
-            } else {
-                // If no more hits to work from, make a random attack
-                do {
-                    int row = rand() % GRID_SIZE;
-                    int col = rand() % GRID_SIZE;
-                    if (userBoard.getCell(row,col) != 'X' && userBoard.getCell(row,col) != 'O') {
-                        QPushButton *button = findButtonAt(row, col, userGridLayout);
-                        if (userBoard.attack(row, col)) {
-                            button->setIcon(hitIcon);
-                            lastHits.append({row, col});
-                            currentDirection = 0;
-                            messageLabel->setText("Bot hit your ship!");
-                        } else {
-                            button->setIcon(missIcon);
-                            messageLabel->setText("Bot missed!");
-                        }
-                        break;
-                    }
-                } while (true);
-            }
-        } else {
-            botHardAttack();
-        }
-    } else {
-        // If no recent hits, use the medium difficulty strategy
-        botSmartAttack();
-    }
-}
 void BattleshipGame::multiplayerPlaceShip(int row, int col, QPushButton *button) {
     Board &currentBoard = (currentPlayer == 1) ? player1Board : player2Board;
     QGridLayout *currentGridLayout = (currentPlayer == 1) ? player1GridLayout : player2GridLayout;
@@ -654,7 +664,7 @@ void BattleshipGame::multiplayerAttack(int row, int col, QPushButton *button) {
     Board &opponentBoard = (currentPlayer == 1) ? player2Board : player1Board;
     QGridLayout *opponentGridLayout = (currentPlayer == 1) ? player2GridLayout : player1GridLayout;
 
-    if (opponentBoard.getCell(row,col) == 'X' || opponentBoard.getCell(row,col) == 'O') {
+    if (opponentBoard.grid[row][col] == 'X' || opponentBoard.grid[row][col] == 'O') {
         QMessageBox::warning(this, "Invalid Move", "You have already attacked this position.");
         return;
     }
@@ -784,120 +794,6 @@ void BattleshipGame::botPlaceShips() {
     }
 }
 
-void BattleshipGame::botAttackExpertMode() {
-    if (gameOver) return;
-
-    if (botTargets.isEmpty()) {
-        // Randomly attack until a ship is hit
-        int row, col;
-        do {
-            row = rand() % GRID_SIZE;
-            col = rand() % GRID_SIZE;
-        } while (userBoard.getCell(row, col) == 'X' || userBoard.getCell(row, col) == 'O');
-
-        QPushButton *button = findButtonAt(row, col, userGridLayout);
-        if (userBoard.attack(row, col)) {
-            button->setIcon(hitIcon);
-            lastHit = qMakePair(row, col);
-            initializeProbabilityVector(row, col);
-            identifyAndQueuePossibleTargets(row, col);
-        } else {
-            button->setIcon(missIcon);
-        }
-    } else {
-        // Use the priority queue to make strategic attacks
-        while (!botTargets.isEmpty()) {
-            auto target = botTargets.back();
-            botTargets.pop_back();
-            int row = target.first;
-            int col = target.second;
-
-            if (userBoard.getCell(row, col) != 'X' && userBoard.getCell(row, col) != 'O') {
-                QPushButton *button = findButtonAt(row, col, userGridLayout);
-                if (userBoard.attack(row, col)) {
-                    button->setIcon(hitIcon);
-                    lastHit = qMakePair(row, col);
-                    updateProbabilityVector(row, col);
-                    identifyAndQueuePossibleTargets(row, col);
-
-                    if (isShipSunk(row, col)) {
-                        resetSearchForNextShip();
-                        break;
-                    }
-                } else {
-                    button->setIcon(missIcon);
-                }
-                break;
-            }
-        }
-    }
-}
-
-void BattleshipGame::initializeProbabilityVector(int row, int col) {
-    probabilityVector.clear();
-    QVector<QPair<int, int>> directions = {
-        qMakePair(-1, 0), qMakePair(1, 0), qMakePair(0, -1), qMakePair(0, 1)
-    };
-    for (const auto &dir : directions) {
-        int newRow = row + dir.first;
-        int newCol = col + dir.second;
-        if (newRow >= 0 && newRow < GRID_SIZE && newCol >= 0 && newCol < GRID_SIZE) {
-            probabilityVector.push_back(qMakePair(newRow, newCol));
-        }
-    }
-}
-
-void BattleshipGame::identifyAndQueuePossibleTargets(int row, int col) {
-    QVector<QPair<int, int>> newTargets;
-    QVector<QPair<int, int>> directions = {
-        qMakePair(-1, 0), qMakePair(1, 0), qMakePair(0, -1), qMakePair(0, 1)
-    };
-
-    for (const auto &dir : directions) {
-        int newRow = row + dir.first;
-        int newCol = col + dir.second;
-        if (newRow >= 0 && newRow < GRID_SIZE && newCol >= 0 && newCol < GRID_SIZE &&
-            userBoard.getCell(newRow, newCol) != 'X' && userBoard.getCell(newRow, newCol) != 'O') {
-            newTargets.append(qMakePair(newRow, newCol));
-        }
-    }
-
-    for (const auto &target : newTargets) {
-        botTargets.push_front(target);
-    }
-}
-
-void BattleshipGame::updateProbabilityVector(int row, int col) {
-    QVector<QPair<int, int>> additionalTargets;
-    QVector<QPair<int, int>> directions = {
-        qMakePair(-1, 0), qMakePair(1, 0), qMakePair(0, -1), qMakePair(0, 1)
-    };
-    for (const auto &dir : directions) {
-        int newRow = row + dir.first;
-        int newCol = col + dir.second;
-        if (newRow >= 0 && newRow < GRID_SIZE && newCol >= 0 && newCol < GRID_SIZE &&
-            userBoard.getCell(newRow, newCol) != 'X' && userBoard.getCell(newRow, newCol) != 'O') {
-            additionalTargets.push_back(qMakePair(newRow, newCol));
-        }
-    }
-
-    for (const auto &target : additionalTargets) {
-        if (!botTargets.contains(target)) {
-
-            botTargets.push_front(target);
-        }
-    }
-}
-
-bool BattleshipGame::isShipSunk(int row, int col) {
-    return !userBoard.hasShipsRemaining();
-}
-
-void BattleshipGame::resetSearchForNextShip() {
-    probabilityVector.clear();
-    botTargets.clear();
-    lastHit = qMakePair(-1, -1);
-}
 void BattleshipGame::onRestartClicked() {
     resetGame();
 }
@@ -905,3 +801,12 @@ void BattleshipGame::onRestartClicked() {
 void BattleshipGame::onExitClicked() {
     QApplication::quit();
 }
+
+int main(int argc, char *argv[]) {
+    QApplication app(argc, argv);
+    BattleshipGame game;
+    game.show();
+    return app.exec();
+}
+
+#include "main.moc"
